@@ -1,3 +1,4 @@
+
 import os
 import asyncio
 import logging
@@ -13,9 +14,10 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 async def search_books(query: str):
-    url = f"https://gutendex.com{query}"
+    base = "https://gutendex.com"
+    params = {"search": query}
     async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
+        async with session.get(base, params=params) as response:
             if response.status == 200:
                 data = await response.json()
                 return data.get("results", [])[:5]
@@ -25,9 +27,8 @@ async def search_books(query: str):
 async def cmd_start(message: types.Message):
     await message.answer(
         "📚 Dunyo Kutubxonasi Botiga xush kelibsiz!\n\n"
-        "Istalgan kitob yoki muallif nomini yozing (masalan: *Harry Potter*, *Sherlock Holmes*, *Dostoevsky*).\n"
-        "Men sizga dunyo bazasidan topib, yuklab olish havolasini beraman!",
-        parse_mode="Markdown"
+        "Istalgan kitob yoki muallif nomini yozing (masalan: Harry Potter, Sherlock Holmes, Dostoevsky).\n"
+        "Men sizga dunyo bazasidan topib, yuklab olish havolasini beraman!"
     )
 
 @dp.message(F.text)
@@ -60,8 +61,7 @@ async def handle_search(message: types.Message):
             await message.answer(
                 f"📖 Kitob: {title}\n"
                 f"✍️ Muallif: {authors}",
-                reply_markup=keyboard,
-                parse_mode="Markdown"
+                reply_markup=keyboard
             )
 
 async def handle_ping(request):
@@ -82,5 +82,4 @@ async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
-if name == "main":
-    asyncio.run(main())
+asyncio.run(main())
