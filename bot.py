@@ -1,68 +1,41 @@
-
-import os
-import asyncio
-import logging
-import aiohttp
-from aiohttp import web
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import CommandStart
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
-TOKEN = os.getenv("BOT_TOKEN")
-
-bot = Bot(token=TOKEN)
-dp = Dispatcher()
-
-async def search_books(query: str):
-    base = "https://gutendex.com"
-    params = {"search": query}
-    async with aiohttp.ClientSession() as session:
-        async with session.get(base, params=params) as response:
-            if response.status == 200:
-                data = await response.json()
-                return data.get("results", [])[:5]
-    return []
-
-@dp.message(CommandStart())
-async def cmd_start(message: types.Message):
-    await message.answer(
-        "📚 Dunyo Kutubxonasi Botiga xush kelibsiz!\n\n"
-        "Istalgan kitob yoki muallif nomini yozing (masalan: Harry Potter, Sherlock Holmes, Dostoevsky).\n"
-        "Men sizga dunyo bazasidan topib, yuklab olish havolasini beraman!"
-    )
-
 @dp.message(F.text)
-async def handle_search(message: types.Message):
+async def handle_book_query(message: types.Message):
+    uid = message.from_user.id
+    lang = user_lang.get(uid, "uz")
     query = message.text.strip()
-    wait_msg = await message.answer("🔍 Dunyo kutubxonasidan qidirilmoqda...")
     
-    books = await search_books(query)
-    await wait_msg.delete()
-
+    wait_msg = await message.answer("🔍 Dunyo kutubxonasidan PDF qidirilmoqda, biroz kuting...")
+    books = await search_archive_pdf(query, lang)
+    
     if not books:
-        await message.answer("😔 Afsuski, bu nom bilan kitob topilmadi. Kitobning asl yoki inglizcha nomini yozib ko'ring.")
+        await wait_msg.edit_text("😔 Afsuski, bu tilda ushbu kitobning ochiq PDF varianti topilmadi. Kitob nomini to'liqroq yoki muallifi bilan yozib ko'ring.")
         return
 
-    for book in books:
-        title = book.get("title", "Noma'lum kitob")
-        authors = ", ".join([a["name"] for a in book.get("authors", [])]) or "Noma'lum muallif"
-        formats = book.get("formats", {})
-        
-        download_url = (
-            formats.get("application/epub+zip") or 
-            formats.get("text/plain; charset=utf-8") or 
-            formats.get("text/html")
-        )
+    await wait_msg.edit_text(f"📚 {len(books)} ta natija topildi, PDF tayyorlanmoqda...")
 
-        if download_url:
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="📥 Kitobni yuklab olish / O'qish", url=download_url)]
+    for book in books[:3]:
+        title = str(book["title"])[:60]
+        author = str(book["author"])[:50]
+        pdf_bytes = await download_pdf_bytes(book["pdf_url"])
+        
+        if pdf_bytes:
+            file_name = f"{title}.pdf".replace("/", "_")
+            doc_file = BufferedInputFile(pdf_bytes, filename=file_name)
+            await message.answer_document(
+                document=doc_file,
+                caption=f"📖 {title}\n✍️ Muallif: {author}\n🌐 Til: {lang.upper()}",
+                parse_mode="Markdown"
+            )
+        else:
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📥 PDF yuklab olish / O'qish", url=book["web_url"])]
             ])
             await message.answer(
-                f"📖 Kitob: {title}\n"
-                f"✍️ Muallif: {authors}",
-                reply_markup=keyboard
+                f"📖 {title}\n✍️ Muallif: {author}\n🌐 Til: {lang.upper()}",
+                reply_markup=kb,
+                parse_mode="Markdown"
             )
+    await wait_msg.delete()
 
 async def handle_ping(request):
     return web.Response(text="Bot ishlayapti!")
